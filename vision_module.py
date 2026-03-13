@@ -1,7 +1,7 @@
 import cv2
 import logging
 
-# Try to load mediapipe gracefully
+# 1. Global check for MediaPipe
 try:
     import mediapipe as mp
     from mediapipe.python.solutions import face_detection as mp_face_detection
@@ -12,20 +12,26 @@ except (ImportError, ModuleNotFoundError, AttributeError):
 
 class VideoDetector:
     def __init__(self):
+        # Tell Python to use the variable defined at the top of the file
+        global MEDIAPIPE_AVAILABLE
+        
         self.face_detection = None
+        
         if MEDIAPIPE_AVAILABLE:
             try:
                 self.face_detection = mp_face_detection.FaceDetection(
                     model_selection=0, 
                     min_detection_confidence=0.5
                 )
-            except Exception:
+            except Exception as e:
+                logging.error(f"Error initializing FaceDetection: {e}")
                 MEDIAPIPE_AVAILABLE = False
 
     def get_face_score(self, frame):
-        # If Mediapipe failed, use a simple OpenCV Haar Cascade as a fallback
-        if not MEDIAPIPE_AVAILABLE:
-            # This ensures the app still RUNS even if Mediapipe is broken on the server
+        global MEDIAPIPE_AVAILABLE
+        
+        if not MEDIAPIPE_AVAILABLE or self.face_detection is None:
+            # Fallback: Return a low score so the app doesn't crash
             return 0.1 
 
         try:
