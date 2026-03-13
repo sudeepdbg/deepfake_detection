@@ -4,3 +4,4 @@ numpy
 librosa
 sounddevice
 torch
+streamlit-webrtc
