@@ -1,7 +1,8 @@
+streamlit
+streamlit-webrtc
 opencv-python-headless
 mediapipe
 numpy
 librosa
-sounddevice
 torch
-streamlit-webrtc
+av
