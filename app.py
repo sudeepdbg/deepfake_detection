@@ -1,33 +1,36 @@
 import streamlit as st
 import cv2
-import tempfile
+import librosa
 from vision_module import VideoDetector
 from audio_module import AudioDetector
 
-st.title("Deepfake Detection System (File Upload)")
+st.title("🛡️ Multimodal Deepfake Detector")
 
-uploaded_file = st.file_uploader("Upload video/audio file", type=["mp4", "wav", "mp3"])
+# File uploader accepts both Video and Audio
+uploaded_file = st.file_uploader("Upload a file to analyze", type=["mp4", "wav", "mp3"])
 
 if uploaded_file is not None:
-    # Save the uploaded file to a temporary location
-    tfile = tempfile.NamedTemporaryFile(delete=False)
-    tfile.write(uploaded_file.read())
+    # Save to a temporary file path
+    with open("temp_file", "wb") as f:
+        f.write(uploaded_file.getbuffer())
     
-    if st.button("Analyze"):
-        # 1. Vision Analysis
-        v_detector = VideoDetector()
-        # Logic: Open the temp file, grab a sample frame, get score
-        v_score = v_detector.analyze_video_file(tfile.name)
+    if st.button("Run Deepfake Analysis"):
+        v_score = 0.0
+        a_score = 0.0
         
-        # 2. Audio Analysis
-        a_detector = AudioDetector()
-        a_score = a_detector.analyze_audio_file(tfile.name)
+        # Determine if it's video or audio based on extension
+        if uploaded_file.name.endswith(".mp4"):
+            v_detector = VideoDetector()
+            v_score = v_detector.analyze_video_file("temp_file")
+            st.write(f"### Video Confidence: {v_score:.2f}")
         
-        # 3. Present Results
-        st.write(f"Video Score: {v_score:.2f}")
-        st.write(f"Audio Score: {a_score:.2f}")
-        
-        if (v_score + a_score) / 2 > 0.5:
-            st.error("Conclusion: Machine Generated / Deepfake")
+        else:
+            a_detector = AudioDetector()
+            a_score = a_detector.predict_audio_file("temp_file")
+            st.write(f"### Audio Confidence: {a_score:.2f}")
+            
+        # Final Conclusion
+        if v_score > 0.5 or a_score > 0.5:
+            st.error("Conclusion: Synthetic/Deepfake Content Detected")
         else:
             st.success("Conclusion: Likely Authentic")
