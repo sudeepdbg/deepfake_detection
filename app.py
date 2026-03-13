@@ -30,7 +30,9 @@ if uploaded_file is not None:
             st.write(f"### Audio Confidence: {a_score:.2f}")
             
         # Final Conclusion
-        if v_score > 0.5 or a_score > 0.5:
-            st.error("Conclusion: Synthetic/Deepfake Content Detected")
-        else:
-            st.success("Conclusion: Likely Authentic")
+if v_score > 0.6 or a_score > 0.6:
+    st.error("Conclusion: Synthetic Content Detected (Triggered by high confidence in video or audio)")
+elif v_score > 0.4 or a_score > 0.4:
+    st.warning("Conclusion: Inconclusive - Further analysis required")
+else:
+    st.success("Conclusion: Likely Authentic")
