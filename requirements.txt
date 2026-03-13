@@ -1,0 +1,19 @@
+# General Utilities
+numpy==1.26.4
+opencv-python-headless==4.9.0.80
+
+# Vision
+mediapipe==0.10.11
+
+# Audio
+librosa==0.10.1
+sounddevice==0.4.6
+scipy==1.12.0
+
+# ML Frameworks
+torch==2.2.1
+torchaudio==2.2.1
+onnxruntime==1.17.1
+
+# Optional: if you move to a Web UI later
+# streamlit==1.32.0
