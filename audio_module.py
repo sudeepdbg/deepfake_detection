@@ -1,10 +1,8 @@
-import numpy as np
+import librosa
 
 class AudioDetector:
-    def __init__(self):
-        pass
-
-    def predict_audio(self, audio_data):
-        # Placeholder for RawNet2 inference
-        # In the cloud POC, we return a safe value
-        return 0.05
+    def predict_audio_file(self, filepath):
+        # Load audio file without needing real-time mic drivers
+        y, sr = librosa.load(filepath, sr=16000)
+        # Your model inference logic here
+        return 0.15 # Placeholder
