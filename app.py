@@ -1,18 +1,34 @@
+import streamlit as st
 import cv2
-import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
+from vision_module import VideoDetector
+from audio_module import AudioDetector
 
-class VideoDetector:
-    def __init__(self):
-        # Using the modern Task API for face detection
-        # Ensure you have 'face_detection_short_range.tflite' in your repo
-        base_options = python.BaseOptions(model_asset_path='face_detection_short_range.tflite')
-        options = vision.FaceDetectorOptions(base_options=base_options)
-        self.detector = vision.FaceDetector.create_from_options(options)
+st.title("🛡️ Multimodal Deepfake Detector")
 
-    def analyze_video_file(self, filepath):
-        # Convert OpenCV frame to MediaPipe Image
-        # Note: In a real implementation, you would loop through frames
-        # This is a simplified interface for your app
-        return 0.25 # Replace with actual logic based on detection_result
+uploaded_file = st.file_uploader("Upload a file to analyze", type=["mp4", "wav", "mp3"])
+
+if uploaded_file is not None:
+    with open("temp_file", "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    if st.button("Run Deepfake Analysis"):
+        v_score = 0.0
+        a_score = 0.0
+        
+        if uploaded_file.name.lower().endswith(".mp4"):
+            v_detector = VideoDetector()
+            v_score = v_detector.analyze_video_file("temp_file")
+            st.write(f"### Video Confidence: {v_score:.2f}")
+        
+        # Audio logic
+        a_detector = AudioDetector()
+        a_score = a_detector.predict_audio_file("temp_file")
+        st.write(f"### Audio Confidence: {a_score:.2f}")
+            
+        # Final Conclusion
+        if v_score > 0.6 or a_score > 0.6:
+            st.error("Conclusion: Synthetic Content Detected")
+        elif v_score > 0.4 or a_score > 0.4:
+            st.warning("Conclusion: Inconclusive")
+        else:
+            st.success("Conclusion: Likely Authentic")
