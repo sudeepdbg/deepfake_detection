@@ -6,9 +6,8 @@ from audio_module import AudioDetector
 
 st.set_page_config(page_title="Deepfake Detector", page_icon="🛡️", layout="wide")
 st.title("🛡️ Multimodal Deepfake Detector")
-st.caption("Frame-level video + audio analysis · MP4, WAV, MP3, JPG, PNG")
+st.caption("Unified AI detection for video frames, still images & audio · MP4, WAV, MP3, JPG, PNG")
 
-# ── Threshold: 0.50 = DEEPFAKE (calibrated on real deepfake data)
 DEEPFAKE_THRESHOLD  = 0.50
 UNCERTAIN_THRESHOLD = 0.35
 
@@ -18,39 +17,64 @@ uploaded_file = st.file_uploader(
 )
 
 
-def verdict_ui(score: float, video_score: float, audio_score: float,
-               audio_failed: bool):
+def verdict_ui(score: float, video_score: float, audio_score,
+               audio_failed: bool, media_type: str):
     st.divider()
     _, col, _ = st.columns([1, 2, 1])
     with col:
         pct = f"{score:.0%}"
         if score >= DEEPFAKE_THRESHOLD:
-            st.error(f"## 🚨 DEEPFAKE DETECTED\nSuspicion score: **{pct}**")
+            label = "🤖 AI GENERATED" if media_type == "image" else "🚨 DEEPFAKE DETECTED"
+            st.error(f"## {label}\nSuspicion score: **{pct}**")
         elif score >= UNCERTAIN_THRESHOLD:
             st.warning(f"## ⚠️ INCONCLUSIVE\nSuspicion score: **{pct}** — manual review recommended")
         else:
             st.success(f"## ✅ LIKELY AUTHENTIC\nSuspicion score: **{pct}**")
 
-        if audio_failed:
-            st.caption("⚠️ Audio analysis failed — verdict based on video only")
+        if audio_failed and media_type != "image":
+            st.caption("⚠️ Audio analysis unavailable — verdict based on video only")
 
         with st.expander("ℹ️ Score breakdown"):
-            st.caption(
-                f"**Video score:** {video_score:.2f} · "
-                f"**Audio score:** {'N/A' if audio_failed else f'{audio_score:.2f}'}  \n"
-                f"Final score = max(video, audio).  "
-                f"Thresholds: ≥ {DEEPFAKE_THRESHOLD:.0%} = Deepfake · "
-                f"≥ {UNCERTAIN_THRESHOLD:.0%} = Inconclusive · "
-                f"< {UNCERTAIN_THRESHOLD:.0%} = Authentic"
-            )
+            if media_type == "image":
+                st.caption(f"**Image score:** {video_score:.2f}")
+            else:
+                audio_str = "N/A" if audio_failed else f"{audio_score:.2f}"
+                st.caption(
+                    f"**Video score:** {video_score:.2f} · "
+                    f"**Audio score:** {audio_str}  \n"
+                    f"Final = max(video, audio).  "
+                    f"Thresholds: ≥{DEEPFAKE_THRESHOLD:.0%} = Fake · "
+                    f"≥{UNCERTAIN_THRESHOLD:.0%} = Inconclusive"
+                )
 
 
-def score_bar(label: str, value: float):
+def score_bar(label: str, value: float, tooltip: str = ""):
     c1, c2, c3 = st.columns([2, 4, 1])
     c1.caption(label)
     c2.progress(float(np.clip(value, 0.0, 1.0)))
     icon = "🔴" if value > 0.5 else "🟡" if value > 0.35 else "🟢"
     c3.caption(f"{icon} {value:.2f}")
+
+
+def show_vision_signals(result: dict, is_image: bool):
+    """Show all 6 visual signals with relevant labels."""
+    media = result.get("_media_type", "")
+    st.caption(f"*Detected as: {media} · "
+               f"image_weight={result.get('_image_w', '?')}, "
+               f"video_weight={result.get('_video_w', '?')}*")
+
+    score_bar("GAN noise fingerprint",
+              result.get("noise_residual", 0))
+    score_bar("Edge coherence (Laplacian)",
+              result.get("edge_coherence", 0))
+    score_bar("ELA uniformity (JPEG artefacts)",
+              result.get("ela_uniformity", 0))
+    score_bar("Skin texture smoothness",
+              result.get("skin_smooth", 0))
+    score_bar("Block variance (8×8 DCT)",
+              result.get("block_smooth", 0))
+    score_bar("Face/background separation",
+              result.get("bg_separation", 0))
 
 
 if uploaded_file is not None:
@@ -62,15 +86,28 @@ if uploaded_file is not None:
 
     if st.button("🔍 Run Deepfake Analysis", type="primary", use_container_width=True):
 
-        video_score = 0.0
-        audio_score = 0.0
+        video_score  = 0.0
+        audio_score  = 0.0
         audio_failed = False
+        is_image     = ext in (".jpg", ".jpeg", ".png")
 
-        # ── MP4 Video ────────────────────────────────────────────────────
-        if ext == ".mp4":
+        # ── STILL IMAGE ───────────────────────────────────────────────────
+        if is_image:
+            with st.spinner("Analysing image…"):
+                result = VideoDetector().analyze_image_file(tmp_path)
+
+            if "error" in result and result["score"] == 0.0:
+                st.error(f"Analysis failed: {result['error']}")
+            else:
+                video_score = result["score"]
+                st.metric("Suspicion Score", f"{video_score:.2f}")
+                show_vision_signals(result, is_image=True)
+            audio_failed = True
+
+        # ── MP4 VIDEO ─────────────────────────────────────────────────────
+        elif ext == ".mp4":
             col_v, col_a = st.columns(2)
 
-            # Frame-level analysis
             with col_v:
                 st.markdown("#### 🎞️ Frame-Level Analysis")
                 with st.spinner("Decoding and analysing frames…"):
@@ -81,23 +118,22 @@ if uploaded_file is not None:
                 else:
                     video_score = vr["score"]
                     st.metric("Video Score", f"{video_score:.2f}",
-                              delta=f"{vr['frames_analysed']} / {vr['total_frames']} frames",
+                              delta=f"{vr['frames_analysed']}/{vr['total_frames']} frames",
                               delta_color="off")
-                    score_bar("Noise residual (GAN fingerprint)", vr["mean_score"])
-                    score_bar("Peak frame suspicion",             vr["max_score"])
-                    score_bar("Temporal inconsistency",           vr["temporal"])
-                    if vr["frame_scores"]:
+                    show_vision_signals(vr, is_image=False)
+                    # Temporal signal (video-only)
+                    score_bar("Temporal inconsistency", vr.get("temporal", 0))
+                    if vr.get("frame_scores"):
                         import pandas as pd
-                        st.caption("Frame-by-frame suspicion score:")
+                        st.caption("Frame-by-frame suspicion:")
                         st.bar_chart(
                             pd.DataFrame({"suspicion": vr["frame_scores"]}),
                             height=130
                         )
 
-            # Audio-track analysis
             with col_a:
                 st.markdown("#### 🔊 Audio Track Analysis")
-                with st.spinner("Extracting and analysing audio via ffmpeg…"):
+                with st.spinner("Extracting and analysing audio…"):
                     ar = AudioDetector().predict_audio_file(tmp_path)
 
                 if "error" in ar:
@@ -105,26 +141,18 @@ if uploaded_file is not None:
                     audio_failed = True
                 else:
                     audio_score = ar["score"]
-                    dur = ar.get("_duration_s", "?")
                     st.metric("Audio Score", f"{audio_score:.2f}",
-                              delta=f"{dur}s analysed", delta_color="off")
-                    score_bar("Spectral flux",     ar.get("spec_flux",   0))
-                    score_bar("Energy variation",  ar.get("energy_var",  0))
-                    score_bar("ZCR consistency",   ar.get("zcr_consist", 0))
-                    score_bar("Spectral rolloff",  ar.get("rolloff",     0))
-                    score_bar("Silence pattern",   ar.get("silence",     0))
-                    with st.expander("📐 Raw diagnostics"):
+                              delta=f"{ar.get('_duration_s','?')}s",
+                              delta_color="off")
+                    score_bar("Spectral flux",    ar.get("spec_flux",   0))
+                    score_bar("Energy variation", ar.get("energy_var",  0))
+                    score_bar("ZCR consistency",  ar.get("zcr_consist", 0))
+                    score_bar("Spectral rolloff", ar.get("rolloff",     0))
+                    score_bar("Silence pattern",  ar.get("silence",     0))
+                    with st.expander("📐 Raw audio diagnostics"):
                         st.json({k: v for k, v in ar.items() if k.startswith("_")})
 
-        # ── Image ────────────────────────────────────────────────────────
-        elif ext in (".jpg", ".jpeg", ".png"):
-            with st.spinner("Analysing image…"):
-                video_score = VideoDetector().analyze_image_file(tmp_path)
-            st.metric("Image Suspicion Score", f"{video_score:.2f}")
-            st.progress(float(video_score))
-            audio_failed = True
-
-        # ── Audio only ───────────────────────────────────────────────────
+        # ── AUDIO ONLY ────────────────────────────────────────────────────
         elif ext in (".wav", ".mp3"):
             with st.spinner("Analysing audio…"):
                 ar = AudioDetector().predict_audio_file(tmp_path)
@@ -140,6 +168,8 @@ if uploaded_file is not None:
                 score_bar("Spectral rolloff", ar.get("rolloff",     0))
                 score_bar("Silence pattern",  ar.get("silence",     0))
 
-        # ── Verdict ──────────────────────────────────────────────────────
+        # ── Verdict ───────────────────────────────────────────────────────
         final_score = max(video_score, audio_score)
-        verdict_ui(final_score, video_score, audio_score, audio_failed)
+        media_label = "image" if is_image else "video"
+        verdict_ui(final_score, video_score, audio_score,
+                   audio_failed, media_label)
