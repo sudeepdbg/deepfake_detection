@@ -182,7 +182,7 @@ def score_frame_or_image(pil_img: Image.Image) -> dict:
         np.array(pil_img.filter(ImageFilter.GaussianBlur(radius=2)),
                  dtype=np.float32)
     ).mean())
-    video_weight = float(np.clip((raw_noise - 3.0) / 4.0, 0.0, 1.0))
+    video_weight = float(np.clip((raw_noise - 6.0) / 4.0, 0.0, 1.0))  # PNG images (noise 3-6) → image path
     image_weight = 1.0 - video_weight
 
     # ── Image weight set ──────────────────────────────────────
