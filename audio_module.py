@@ -128,11 +128,16 @@ class AudioDetector:
         """
         tmp_wav = None
         try:
+            # Use the ffmpeg binary bundled with imageio_ffmpeg — always present
+            # on Streamlit Cloud. Do NOT use bare 'ffmpeg' — it is not on PATH.
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
                 tmp_wav = f.name
 
             result = subprocess.run(
-                ['ffmpeg', '-y', '-i', filepath,
+                [ffmpeg_exe, '-y', '-i', filepath,
                  '-vn',                    # no video
                  '-acodec', 'pcm_s16le',   # 16-bit PCM
                  '-ar', '16000',           # 16 kHz
