@@ -1,42 +1,66 @@
+# audio_module.py
 import numpy as np
 import librosa
 
+
 class AudioDetector:
+    """
+    Analyses audio for synthetic / manipulated content.
+    Works on .wav, .mp3, AND .mp4 (audio track extracted via ffmpeg,
+    which is pre-installed on Streamlit Cloud).
+    """
+
     def predict_audio_file(self, filepath: str) -> float:
         """
-        FIX 4: Returns a properly normalised confidence score in [0.0, 1.0].
+        Returns a confidence score in [0.0, 1.0].
+        0.0 = likely authentic   |   1.0 = likely synthetic
 
-        Previously, np.mean(spectrogram) returned a raw dB value (e.g. -30.0)
-        which was meaningless as a deepfake confidence score and would always
-        trigger the "> 0.6 → synthetic" branch or the "< 0.4 → authentic"
-        branch arbitrarily.
-
-        Current implementation extracts MFCCs (a compact, normalised
-        representation of the Mel spectrogram) and maps their energy to [0,1]
-        using a sigmoid function.
-
-        Plug in your real trained model's inference in place of the
-        heuristic sigmoid at the bottom of this function.
+        Feature pipeline:
+          1. MFCCs  — captures timbral texture
+          2. Spectral centroid — brightness / naturalness indicator
+          3. Zero-crossing rate — noisiness / synthesis artefacts
+          4. RMS energy variance — unnatural flatness in synthetic audio
+        All features are normalized and combined into one score via sigmoid.
         """
         try:
-            y, sr = librosa.load(filepath, sr=16000, mono=True)
-        except Exception:
+            # librosa uses audioread → ffmpeg fallback for MP4/video containers
+            y, sr = librosa.load(filepath, sr=16000, mono=True, duration=60)
+        except Exception as e:
             return 0.0
 
-        if len(y) == 0:
+        if len(y) < sr * 0.5:   # less than 0.5 s — not enough signal
             return 0.0
 
-        # 1. Extract MFCCs (13 coefficients, time-averaged)
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-        mfcc_mean = np.mean(mfccs, axis=1)   # shape: (13,)
+        # ── Feature 1: MFCCs ──────────────────────────────────────────────
+        mfccs      = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
+        mfcc_mean  = np.abs(np.mean(mfccs, axis=1)).mean()   # overall energy
+        mfcc_std   = np.std(mfccs)                           # variation
 
-        # 2. Spectral features
-        spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
-        zcr               = np.mean(librosa.feature.zero_crossing_rate(y))
+        # ── Feature 2: Spectral centroid ──────────────────────────────────
+        centroid     = librosa.feature.spectral_centroid(y=y, sr=sr)
+        centroid_std = float(np.std(centroid))   # low std → suspiciously uniform
 
-        # 3. Placeholder heuristic score (sigmoid of L2 norm of MFCCs).
-        # This produces a score in (0, 1) — replace with real model inference.
-        feature_magnitude = float(np.linalg.norm(mfcc_mean)) / 100.0
-        score = 1.0 / (1.0 + np.exp(-feature_magnitude + 2))   # sigmoid centred at 2
+        # ── Feature 3: Zero-crossing rate ────────────────────────────────
+        zcr     = librosa.feature.zero_crossing_rate(y)
+        zcr_std = float(np.std(zcr))
 
-        return round(float(score), 3)
+        # ── Feature 4: RMS energy variance ───────────────────────────────
+        rms        = librosa.feature.rms(y=y)
+        rms_var    = float(np.var(rms))
+
+        # ── Combine into single score ─────────────────────────────────────
+        # Heuristic weights — replace with trained model output in production.
+        # Synthetic audio tends to have:
+        #   • lower MFCC std (flatter spectrum)
+        #   • lower centroid std (less tonal variation)
+        #   • lower RMS variance (less dynamic range)
+        flatness_score = (
+            max(0, 1 - mfcc_std / 15.0)       * 0.40 +
+            max(0, 1 - centroid_std / 800.0)   * 0.30 +
+            max(0, 1 - rms_var / 0.01)         * 0.20 +
+            max(0, 1 - zcr_std / 0.05)         * 0.10
+        )
+
+        # Sigmoid to keep in (0, 1) and avoid hard clipping
+        score = 1.0 / (1.0 + np.exp(-6 * (flatness_score - 0.5)))
+        return round(float(np.clip(score, 0.0, 1.0)), 3)
