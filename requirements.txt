@@ -1,9 +1,6 @@
 streamlit
 numpy
-librosa
-soundfile
 Pillow
 imageio
 imageio-ffmpeg
 scipy
-av
