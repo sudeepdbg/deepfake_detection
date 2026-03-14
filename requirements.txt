@@ -6,3 +6,4 @@ Pillow
 imageio
 imageio-ffmpeg
 scipy
+av
