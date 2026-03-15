@@ -42,7 +42,7 @@ def verdict_ui(score: float, video_score: float, audio_score,
                     f"**Video:** {video_score:.2f} · "
                     f"**Audio:** {'N/A' if audio_failed else f'{audio_score:.2f}'}  \n"
                     f"Final = max(video, audio). "
-                    f"≥{DEEPFAKE_THRESHOLD:.0%}=Fake · ≥{UNCERTAIN_THRESHOLD:.0%}=Inconclusive"
+                    f"≥{DEEPFAKE_THRESHOLD:.0%} = Fake · ≥{UNCERTAIN_THRESHOLD:.0%} = Inconclusive"
                 )
 
 
@@ -55,18 +55,18 @@ def score_bar(label: str, value: float):
 
 
 def show_vision_signals(r: dict):
-    """Display all 7 visual signals with media-type context."""
-    media = r.get("_media_type", "")
+    media = r.get("_media_type", "unknown")
     vw    = r.get("_video_w", 0)
     iw    = r.get("_image_w", 0)
     st.caption(f"*Detected as: **{media}** · image_weight={iw:.2f}, video_weight={vw:.2f}*")
-    score_bar("ELA uniformity (JPEG artefacts)",    r.get("ela_uniformity", 0))
-    score_bar("Skin texture smoothness",             r.get("skin_smooth",    0))
-    score_bar("GAN noise fingerprint",               r.get("noise_residual", 0))
-    score_bar("Edge coherence (Laplacian)",          r.get("edge_coherence", 0))
-    score_bar("Noise autocorrelation (PRNU)",        r.get("noise_autocorr", 0))
-    score_bar("Over-sharpening artefacts",           r.get("over_sharpening",0))
-    score_bar("Face/background separation",          r.get("bg_separation",  0))
+    score_bar("Chroma noise correlation",    r.get("chroma_noise_corr", 0))
+    score_bar("Noise autocorrelation (PRNU)", r.get("noise_autocorr",   0))
+    score_bar("Skin texture smoothness",     r.get("skin_smooth",       0))
+    score_bar("ELA uniformity",              r.get("ela_uniformity",    0))
+    score_bar("Edge coherence (Laplacian)",  r.get("edge_coherence",    0))
+    score_bar("GAN noise fingerprint",       r.get("noise_residual",    0))
+    score_bar("Over-sharpening artefacts",   r.get("over_sharpening",   0))
+    score_bar("Face/background separation",  r.get("bg_separation",     0))
 
 
 if uploaded_file is not None:
@@ -83,11 +83,10 @@ if uploaded_file is not None:
         audio_failed = False
         is_image     = ext in (".jpg", ".jpeg", ".png")
 
-        # ── STILL IMAGE (JPG or PNG) ──────────────────────────────────────
+        # ── STILL IMAGE ───────────────────────────────────────────────────
         if is_image:
-            with st.spinner("Analysing image for AI-generation artefacts…"):
+            with st.spinner("Analysing image…"):
                 result = VideoDetector().analyze_image_file(tmp_path)
-
             if "error" in result and result["score"] == 0.0:
                 st.error(f"Analysis failed: {result['error']}")
             else:
@@ -104,9 +103,8 @@ if uploaded_file is not None:
                 st.markdown("#### 🎞️ Frame-Level Analysis")
                 with st.spinner("Decoding and analysing frames…"):
                     vr = VideoDetector().analyze_video_file(tmp_path, n_frames=30)
-
                 if vr.get("frames_analysed", 0) == 0:
-                    st.error(f"Frame analysis failed: {vr.get('error','unknown')}")
+                    st.error(f"Frame analysis failed: {vr.get('error', 'unknown')}")
                 else:
                     video_score = vr["score"]
                     st.metric("Video Score", f"{video_score:.2f}",
@@ -123,20 +121,18 @@ if uploaded_file is not None:
                 st.markdown("#### 🔊 Audio Track Analysis")
                 with st.spinner("Extracting and analysing audio…"):
                     ar = AudioDetector().predict_audio_file(tmp_path)
-
                 if "error" in ar:
                     st.warning(f"Audio: {ar['error']}")
                     audio_failed = True
                 else:
                     audio_score = ar["score"]
                     st.metric("Audio Score", f"{audio_score:.2f}",
-                              delta=f"{ar.get('_duration_s','?')}s",
-                              delta_color="off")
-                    score_bar("Spectral flux",     ar.get("spec_flux",    0))
-                    score_bar("Energy variation",  ar.get("energy_var",   0))
-                    score_bar("ZCR consistency",   ar.get("zcr_consist",  0))
-                    score_bar("Spectral rolloff",  ar.get("rolloff",      0))
-                    score_bar("Silence pattern",   ar.get("silence",      0))
+                              delta=f"{ar.get('_duration_s','?')}s", delta_color="off")
+                    score_bar("Spectral flux",    ar.get("spec_flux",   0))
+                    score_bar("Energy variation", ar.get("energy_var",  0))
+                    score_bar("ZCR consistency",  ar.get("zcr_consist", 0))
+                    score_bar("Spectral rolloff", ar.get("rolloff",     0))
+                    score_bar("Silence pattern",  ar.get("silence",     0))
                     with st.expander("📐 Raw audio diagnostics"):
                         st.json({k: v for k, v in ar.items() if k.startswith("_")})
 
